@@ -4,23 +4,30 @@ import {
     type TxModalCategories,
 } from "@/components/transactions/AddTransactionModalProvider";
 import { AddTransactionModal } from "@/components/transactions/AddTransactionModal";
-import { getCategories } from "@/lib/queries";
+import { ProfileProvider } from "@/components/providers/ProfileProvider";
+import { getCategories, getProfile } from "@/lib/queries";
 
 // ponytail: proxy.ts already redirects unauthenticated users, so the
-// layout doesn't re-run getUser. getCategories is fetched here once per
-// request (React.cache dedupes) and threaded through the modal provider so
-// AddTransactionModal can open instantly without hitting Supabase again.
+// layout doesn't re-run getUser. getCategories and getProfile are
+// fetched here once per request (React.cache dedupes) and threaded
+// through their respective providers so the page tree can read them
+// without re-querying Supabase.
 export default async function AppLayout({
     children,
 }: {
     children: React.ReactNode;
 }) {
-    const categories: TxModalCategories = await getCategories();
+    const [categories, profile] = await Promise.all([
+        getCategories(),
+        getProfile(),
+    ]);
 
     return (
-        <TxModalProvider categories={categories}>
-            <Shell>{children}</Shell>
-            <AddTransactionModal />
-        </TxModalProvider>
+        <ProfileProvider initialProfile={profile}>
+            <TxModalProvider categories={categories as TxModalCategories}>
+                <Shell>{children}</Shell>
+                <AddTransactionModal />
+            </TxModalProvider>
+        </ProfileProvider>
     );
 }
