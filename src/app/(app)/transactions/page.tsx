@@ -11,8 +11,6 @@ import { TransactionList } from "@/components/transactions/TransactionList";
 import { formatMoney } from "@/lib/utils/money";
 import { computeAvailableBalance } from "@/lib/utils/budget";
 
-export const dynamic = "force-dynamic";
-
 interface PageProps {
     searchParams: Promise<{ ym?: string }>;
 }

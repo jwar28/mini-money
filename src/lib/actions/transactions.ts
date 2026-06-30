@@ -51,9 +51,7 @@ export async function createTransactionAction(
     }
 
     updateTag(`transactions:${user.id}`);
-    revalidatePath("/");
-    revalidatePath("/transactions");
-    revalidatePath("/budget");
+    revalidatePath("/", "page");
     return { success: true };
 }
 
@@ -67,6 +65,5 @@ export async function deleteTransactionAction(formData: FormData): Promise<void>
     if (!user) return;
     await supabase.from("transactions").delete().eq("id", id);
     updateTag(`transactions:${user.id}`);
-    revalidatePath("/");
-    revalidatePath("/transactions");
+    revalidatePath("/", "page");
 }

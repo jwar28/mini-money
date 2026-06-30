@@ -42,13 +42,12 @@ export function DesktopTopBar() {
             gap={4}
             px={8}
             py={5}
-            bg="bg.app"
+            bg="bg.card"
             borderBottomWidth="1px"
             borderColor="border.subtle"
             position="sticky"
             top={0}
             zIndex={5}
-            backdropFilter="saturate(180%) blur(8px)"
         >
             <InputGroup maxW="520px" w="full" startElement={<FiSearch />}>
                 <Input placeholder="Search data points..." bg="bg.card" />

@@ -1,23 +1,12 @@
 "use client";
 
 import { Box, Card, Flex, Heading, Stack, Text } from "@chakra-ui/react";
-import type { IconType } from "react-icons";
-import { FiHome, FiShoppingBag, FiTrendingUp } from "react-icons/fi";
 import NextLink from "next/link";
-import type { BucketName } from "@/types/database";
 import { formatMoney } from "@/lib/utils/money";
-
-const ICONS: Record<BucketName, IconType> = {
-    needs: FiHome,
-    wants: FiShoppingBag,
-    savings: FiTrendingUp,
-};
-
-const COLOR: Record<BucketName, string> = {
-    needs: "#2563eb",
-    wants: "#10b981",
-    savings: "#059669",
-};
+import {
+    ALLOCATION_ICONS,
+    ALLOCATION_COLORS,
+} from "@/components/dashboard/allocation-constants";
 
 interface BucketSummary {
     key: "needs" | "wants" | "savings";
@@ -51,8 +40,8 @@ export function AllocationCards({ buckets }: AllocationCardsProps) {
                 </Flex>
                 <Stack direction={{ base: "column", md: "row" }} gap={4} align="stretch">
                     {buckets.map((b) => {
-                        const Icon = ICONS[b.key];
-                        const color = COLOR[b.key];
+                        const Icon = ALLOCATION_ICONS[b.key];
+                        const color = ALLOCATION_COLORS[b.key];
                         const pct = Math.min(100, Math.max(0, b.percentage));
                         return (
                             <Card.Root

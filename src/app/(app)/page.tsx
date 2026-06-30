@@ -1,3 +1,4 @@
+import dynamic from "next/dynamic";
 import {
     getCategories,
     getMonthlyBudget,
@@ -9,12 +10,33 @@ import {
 import { BalanceCard } from "@/components/dashboard/BalanceCard";
 import { AllocationCards } from "@/components/dashboard/AllocationCards";
 import { TotalSavingsCard } from "@/components/dashboard/TotalSavingsCard";
-import { TrendChart } from "@/components/dashboard/TrendChart";
 import { RecentTransactions } from "@/components/dashboard/RecentTransactions";
 import { computeAvailableBalance } from "@/lib/utils/budget";
-import { Box, Grid, GridItem, Heading, Stack, Text } from "@chakra-ui/react";
+import { Box, Grid, GridItem, Heading, Skeleton, Stack, Text } from "@chakra-ui/react";
 
-export const dynamic = "force-dynamic";
+// ponytail: recharts is ~100 kB gzipped and not visible on first paint —
+// defer its JS so the dashboard renders the above-the-fold cards instantly.
+const TrendChart = dynamic(
+    () => import("@/components/dashboard/TrendChart").then((m) => m.TrendChart),
+    {
+        ssr: true,
+        loading: () => (
+            <Box
+                borderRadius="card"
+                borderWidth="1px"
+                borderColor="border.subtle"
+                bg="bg.card"
+                p={{ base: 4, md: 6 }}
+                h="full"
+            >
+                <Stack gap={4}>
+                    <Skeleton height="22px" width="160px" />
+                    <Skeleton height={{ base: "240px", md: "300px" }} width="100%" />
+                </Stack>
+            </Box>
+        ),
+    },
+);
 
 interface PageProps {
     searchParams: Promise<{ ym?: string }>;

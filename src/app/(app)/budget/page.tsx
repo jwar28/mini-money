@@ -3,8 +3,6 @@ import { getCategories, getCurrentUserId, getMonthlyBudget } from "@/lib/queries
 import { MonthSelector } from "@/components/budget/MonthSelector";
 import { BudgetComposer } from "@/components/budget/BudgetComposer";
 
-export const dynamic = "force-dynamic";
-
 interface PageProps {
     searchParams: Promise<{ ym?: string }>;
 }

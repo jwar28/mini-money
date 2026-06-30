@@ -1,8 +1,12 @@
 "use client";
 
 import {
+    memo,
     useActionState,
+    useCallback,
+    useDeferredValue,
     useEffect,
+    useMemo,
     useRef,
     useState,
     useTransition,
@@ -13,7 +17,6 @@ import {
     Box,
     Button,
     Card,
-    Dialog,
     Flex,
     Heading,
     IconButton,
@@ -25,8 +28,6 @@ import {
     Text,
 } from "@chakra-ui/react";
 import {
-    FiAlertTriangle,
-    FiCheckCircle,
     FiEdit3,
     FiLock,
     FiMoreVertical,
@@ -40,10 +41,9 @@ import type { CategoryRow } from "@/types/database";
 import { resolveIcon } from "@/lib/utils/categories";
 import { formatMoney, formatWithDots, parseAmountInput } from "@/lib/utils/money";
 import { lockBudgetAction, type LockFormState } from "@/lib/actions/budget";
-import { deleteCategoryAction } from "@/lib/actions/categories";
 import type { BudgetWithAllocations } from "@/lib/queries";
 import { CategoryEditor } from "@/components/budget/CategoryEditor";
-import { blurActiveElement } from "@/lib/utils/focus-utils";
+import { DeleteCategoryDialog } from "@/components/budget/DeleteCategoryDialog";
 
 interface BudgetComposerProps {
     year: number;
@@ -76,10 +76,6 @@ export function BudgetComposer({
     );
     const baseSalary = parseAmountInput(salary);
 
-    // Live-format salary input: type=number can't show thousands separators,
-    // so we keep a digits-only state and render a text input with dots inserted
-    // on every keystroke. Cursor position is mapped by digit-count so that
-    // newly-inserted dots don't push the caret forward unexpectedly.
     const onSalaryChange = (e: ChangeEvent<HTMLInputElement>) => {
         const input = e.target;
         const oldValue = input.value;
@@ -112,19 +108,25 @@ export function BudgetComposer({
             }
         });
     };
-    const initialAllocMap = new Map(
-        (initial?.budget_allocations ?? []).map((a) => [
-            a.category_id,
-            {
-                percentage: Number(a.percentage),
-                is_visual_locked: !!a.is_visual_locked,
-            },
-        ]),
+
+    const initialAllocMap = useMemo(
+        () =>
+            new Map(
+                (initial?.budget_allocations ?? []).map((a) => [
+                    a.category_id,
+                    {
+                        percentage: Number(a.percentage),
+                        is_visual_locked: !!a.is_visual_locked,
+                    },
+                ]),
+            ),
+        [initial],
     );
-    // Local user input layered over the saved allocations. Newly added
-    // categories (after a CRUD refresh) automatically get DEFAULT_ROW from the
-    // getRow() helper below, so they never produce an `undefined` row.
+
     const [overrides, setOverrides] = useState<Record<string, Row>>({});
+    // Defer the merged override view so dragging a slider through many
+    // categories doesn't re-derive every percentage label on every frame.
+    const deferredOverrides = useDeferredValue(overrides);
 
     const [state, action, pending] = useActionState(lockBudgetAction, initialFormState);
     const [, startRefresh] = useTransition();
@@ -143,34 +145,93 @@ export function BudgetComposer({
         }
     }, [state?.success, router, startRefresh]);
 
-    const getRow = (catId: string): Row =>
-        overrides[catId] ?? initialAllocMap.get(catId) ?? DEFAULT_ROW;
+    const getRow = useCallback(
+        (catId: string): Row =>
+            deferredOverrides[catId] ?? initialAllocMap.get(catId) ?? DEFAULT_ROW,
+        [deferredOverrides, initialAllocMap],
+    );
 
-    const setPercentage = (catId: string, value: number) =>
-        setOverrides((o) => ({
-            ...o,
-            [catId]: { ...getRow(catId), percentage: value },
-        }));
+    const setPercentage = useCallback(
+        (catId: string, value: number) =>
+            setOverrides((o) => ({
+                ...o,
+                [catId]: {
+                    percentage: value,
+                    is_visual_locked:
+                        o[catId]?.is_visual_locked ??
+                        initialAllocMap.get(catId)?.is_visual_locked ??
+                        false,
+                },
+            })),
+        [initialAllocMap],
+    );
 
-    const toggleLock = (catId: string) =>
-        setOverrides((o) => ({
-            ...o,
-            [catId]: {
-                ...getRow(catId),
-                is_visual_locked: !getRow(catId).is_visual_locked,
-            },
-        }));
+    const toggleLock = useCallback(
+        (catId: string) =>
+            setOverrides((o) => {
+                const current =
+                    o[catId]?.is_visual_locked ??
+                    initialAllocMap.get(catId)?.is_visual_locked ??
+                    false;
+                const percentage =
+                    o[catId]?.percentage ??
+                    initialAllocMap.get(catId)?.percentage ??
+                    0;
+                return {
+                    ...o,
+                    [catId]: {
+                        percentage,
+                        is_visual_locked: !current,
+                    },
+                };
+            }),
+        [initialAllocMap],
+    );
 
-    // Always derive the full row list from the current categories so renderings
-    // reflect newly added ids without needing a remount.
-    const rows = categories.map((c) => ({ category_id: c.id, ...getRow(c.id) }));
+    // Stable handlers that wire directly to state setters; safe to pass
+    // through React.memo without re-creating on each render.
+    const handleEdit = useCallback((c: CategoryRow) => setEditingCategory(c), []);
+    const handleDeleteAsk = useCallback((c: CategoryRow) => {
+        setDeleteError(null);
+        setDeletingCategory(c);
+    }, []);
+    const closeEdit = useCallback(() => setEditingCategory(null), []);
+    const closeCreate = useCallback(() => setCreating(false), []);
 
-    const totals = rows.reduce((s, r) => s + r.percentage, 0);
+    const rows = useMemo(
+        () =>
+            categories.map((c) => {
+                const r = getRow(c.id);
+                return {
+                    cat: c,
+                    row: {
+                        category_id: c.id,
+                        percentage: r.percentage,
+                        is_visual_locked: r.is_visual_locked,
+                    },
+                };
+            }),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [categories, deferredOverrides, initialAllocMap],
+    );
+
+    const totals = useMemo(
+        () => rows.reduce((s, r) => s + r.row.percentage, 0),
+        [rows],
+    );
     const balanced = Math.abs(totals - 100) < 0.005;
     const hasSalary = baseSalary > 0;
 
-    const allocationsPayload = rows.filter(
-        (r) => r.percentage > 0 || r.is_visual_locked,
+    const allocationsPayload = useMemo(
+        () =>
+            rows
+                .filter((r) => r.row.percentage > 0 || r.row.is_visual_locked)
+                .map((r) => ({
+                    category_id: r.row.category_id,
+                    percentage: r.row.percentage,
+                    is_visual_locked: r.row.is_visual_locked,
+                })),
+        [rows],
     );
 
     const userCategories = categories.filter((c) => c.user_id === currentUserId);
@@ -180,6 +241,7 @@ export function BudgetComposer({
         if (!deletingCategory) return;
         setDeleteError(null);
         startDeleteTransition(async () => {
+            const { deleteCategoryAction } = await import("@/lib/actions/categories");
             const result = await deleteCategoryAction(deletingCategory.id);
             if (result.error) {
                 setDeleteError(result.error);
@@ -204,13 +266,7 @@ export function BudgetComposer({
             <input
                 type="hidden"
                 name="allocations_json"
-                value={JSON.stringify(
-                    allocationsPayload.map((r) => ({
-                        category_id: r.category_id,
-                        percentage: r.percentage,
-                        is_visual_locked: r.is_visual_locked,
-                    })),
-                )}
+                value={JSON.stringify(allocationsPayload)}
             />
 
             <Stack gap={6}>
@@ -275,29 +331,20 @@ export function BudgetComposer({
                             </Stack>
                         ) : null}
                         <Stack gap={5}>
-                            {categories.map((cat) => {
-                                const row = getRow(cat.id);
-                                const IconCmp = resolveIcon(cat.icon);
-                                const isEditable = cat.user_id === currentUserId;
-                                return (
-                                    <AllocationRow
-                                        key={cat.id}
-                                        icon={IconCmp as ComponentType<{ size?: number }>}
-                                        name={cat.name}
-                                        amount={(baseSalary * row.percentage) / 100}
-                                        percentage={row.percentage}
-                                        locked={row.is_visual_locked}
-                                        isEditable={isEditable}
-                                        onPercentageChange={(v) => setPercentage(cat.id, v)}
-                                        onToggleLock={() => toggleLock(cat.id)}
-                                        onEdit={() => setEditingCategory(cat)}
-                                        onDelete={() => {
-                                            setDeleteError(null);
-                                            setDeletingCategory(cat);
-                                        }}
-                                    />
-                                );
-                            })}
+                            {rows.map(({ cat, row }) => (
+                                <AllocationRow
+                                    key={cat.id}
+                                    cat={cat}
+                                    amount={(baseSalary * row.percentage) / 100}
+                                    percentage={row.percentage}
+                                    locked={row.is_visual_locked}
+                                    isEditable={cat.user_id === currentUserId}
+                                    onPercentageChange={setPercentage}
+                                    onToggleLock={toggleLock}
+                                    onEdit={handleEdit}
+                                    onDelete={handleDeleteAsk}
+                                />
+                            ))}
                             <Button
                                 type="button"
                                 onClick={() => setCreating(true)}
@@ -362,16 +409,20 @@ export function BudgetComposer({
                 mode="create"
                 category={null}
                 open={creating}
-                onClose={() => setCreating(false)}
+                onClose={closeCreate}
                 onSaved={() => router.refresh()}
             />
 
             <CategoryEditor
-                key={editingCategory ? `category-edit-${editingCategory.id}` : "category-edit-closed"}
+                key={
+                    editingCategory
+                        ? `category-edit-${editingCategory.id}`
+                        : "category-edit-closed"
+                }
                 mode="edit"
                 category={editingCategory}
                 open={!!editingCategory}
-                onClose={() => setEditingCategory(null)}
+                onClose={closeEdit}
                 onSaved={() => router.refresh()}
             />
 
@@ -386,9 +437,20 @@ export function BudgetComposer({
     );
 }
 
-function AllocationRow({
-    icon: IconCmp,
-    name,
+interface AllocationRowProps {
+    cat: CategoryRow;
+    amount: number;
+    percentage: number;
+    locked: boolean;
+    isEditable: boolean;
+    onPercentageChange: (catId: string, value: number) => void;
+    onToggleLock: (catId: string) => void;
+    onEdit: (cat: CategoryRow) => void;
+    onDelete: (cat: CategoryRow) => void;
+}
+
+const AllocationRow = memo(function AllocationRow({
+    cat,
     amount,
     percentage,
     locked,
@@ -397,18 +459,11 @@ function AllocationRow({
     onToggleLock,
     onEdit,
     onDelete,
-}: {
-    icon: ComponentType<{ size?: number }>;
-    name: string;
-    amount: number;
-    percentage: number;
-    locked: boolean;
-    isEditable: boolean;
-    onPercentageChange: (v: number) => void;
-    onToggleLock: () => void;
-    onEdit: () => void;
-    onDelete: () => void;
-}) {
+}: AllocationRowProps) {
+    const IconCmp = useMemo(
+        () => resolveIcon(cat.icon) as ComponentType<{ size?: number }>,
+        [cat.icon],
+    );
     return (
         <Box>
             <Flex justify="space-between" align="center" mb={3} gap={3}>
@@ -427,7 +482,7 @@ function AllocationRow({
                         <IconCmp size={20} />
                     </Box>
                     <Text fontWeight="700" fontSize="md" color="text.primary" lineClamp={1}>
-                        {name}
+                        {cat.name}
                     </Text>
                 </Flex>
                 <Flex align="center" gap={3}>
@@ -443,7 +498,7 @@ function AllocationRow({
                         aria-label={locked ? "Unlock allocation" : "Lock allocation"}
                         variant="ghost"
                         size="sm"
-                        onClick={onToggleLock}
+                        onClick={() => onToggleLock(cat.id)}
                         color={locked ? "brand.600" : "ink.400"}
                     >
                         {locked ? <FiLock /> : <FiUnlock />}
@@ -452,7 +507,7 @@ function AllocationRow({
                         <Menu.Root positioning={{ placement: "bottom-end" }}>
                             <Menu.Trigger asChild>
                                 <IconButton
-                                    aria-label={`Manage ${name}`}
+                                    aria-label={`Manage ${cat.name}`}
                                     variant="ghost"
                                     size="sm"
                                     color="ink.400"
@@ -463,17 +518,14 @@ function AllocationRow({
                             <Portal>
                                 <Menu.Positioner>
                                     <Menu.Content minW="180px">
-                                        <Menu.Item
-                                            value="edit"
-                                            onSelect={() => onEdit()}
-                                        >
+                                        <Menu.Item value="edit" onSelect={() => onEdit(cat)}>
                                             <FiEdit3 />
                                             Edit
                                         </Menu.Item>
                                         <Menu.Separator />
                                         <Menu.Item
                                             value="delete"
-                                            onSelect={() => onDelete()}
+                                            onSelect={() => onDelete(cat)}
                                             color="danger"
                                         >
                                             <FiTrash2 />
@@ -491,7 +543,7 @@ function AllocationRow({
                 min={0}
                 max={100}
                 step={1}
-                onValueChange={(d) => onPercentageChange(d.value[0] ?? 0)}
+                onValueChange={(d) => onPercentageChange(cat.id, d.value[0] ?? 0)}
             >
                 <Slider.Control>
                     <Slider.Track bg="surface.subtle" h="6px" borderRadius="pill">
@@ -505,7 +557,7 @@ function AllocationRow({
             </Slider.Root>
         </Box>
     );
-}
+});
 
 function TotalizerBadge({ total }: { total: number }) {
     const balanced = Math.abs(total - 100) < 0.005;
@@ -522,7 +574,20 @@ function TotalizerBadge({ total }: { total: number }) {
                 fontWeight="700"
                 fontSize="sm"
             >
-                <FiCheckCircle />
+                <Flex
+                    align="center"
+                    justify="center"
+                    w="16px"
+                    h="16px"
+                    borderRadius="full"
+                    borderWidth="2px"
+                    borderColor="#047857"
+                    color="#047857"
+                    fontSize="11px"
+                    fontWeight="900"
+                >
+                    ✓
+                </Flex>
                 Balanced: {total.toFixed(0)}%
             </Flex>
         );
@@ -539,77 +604,21 @@ function TotalizerBadge({ total }: { total: number }) {
             fontWeight="700"
             fontSize="sm"
         >
-            <FiAlertTriangle />
+            <Box
+                w="16px"
+                h="16px"
+                borderRadius="full"
+                bg="rgba(239, 68, 68, 0.3)"
+                display="flex"
+                alignItems="center"
+                justifyContent="center"
+                fontSize="11px"
+                fontWeight="900"
+                color="#b91c1c"
+            >
+                !
+            </Box>
             {total > 100 ? `Over ${total.toFixed(0)}%` : `${total.toFixed(0)}% assigned`}
         </Flex>
-    );
-}
-
-function DeleteCategoryDialog({
-    category,
-    onClose,
-    onConfirm,
-    pending,
-    error,
-}: {
-    category: CategoryRow | null;
-    onClose: () => void;
-    onConfirm: () => void;
-    pending: boolean;
-    error: string | null;
-}) {
-    const open = !!category;
-    const body = (
-        <Stack gap={4}>
-            <Text>
-                Delete <strong>{category?.name}</strong>? Any budget allocations linked to it will
-                also be removed. This action cannot be undone.
-            </Text>
-            {error ? (
-                <Box
-                    p={3}
-                    borderRadius="button"
-                    bg="rgba(239, 68, 68, 0.08)"
-                    color="#b91c1c"
-                    fontSize="sm"
-                >
-                    {error}
-                </Box>
-            ) : null}
-            <Flex gap={3} justify="end">
-                <Button variant="outline" onClick={onClose} disabled={pending}>
-                    Cancel
-                </Button>
-                <Button colorPalette="red" onClick={onConfirm} loading={pending} loadingText="Deleting">
-                    Delete
-                </Button>
-            </Flex>
-        </Stack>
-    );
-
-    return (
-        <Dialog.Root
-            open={open}
-            onOpenChange={(d) => {
-                if (!d.open) {
-                    blurActiveElement();
-                    onClose();
-                }
-            }}
-            size="md"
-            role="alertdialog"
-        >
-            <Portal>
-                <Dialog.Backdrop />
-                <Dialog.Positioner>
-                    <Dialog.Content>
-                        <Dialog.Header>
-                            <Dialog.Title>Delete category</Dialog.Title>
-                        </Dialog.Header>
-                        <Dialog.Body>{body}</Dialog.Body>
-                    </Dialog.Content>
-                </Dialog.Positioner>
-            </Portal>
-        </Dialog.Root>
     );
 }

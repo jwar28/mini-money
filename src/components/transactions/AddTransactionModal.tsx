@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useState, useTransition, useActionState } from "react";
+import {
+    useEffect,
+    useRef,
+    useState,
+    useTransition,
+    useActionState,
+    type ChangeEvent,
+} from "react";
 import {
     Box,
     Button,
@@ -15,13 +22,15 @@ import {
     Textarea,
 } from "@chakra-ui/react";
 import { useTxModal } from "./AddTransactionModalProvider";
-import { createClient } from "@/lib/supabase/client";
 import {
     createTransactionAction,
     type TxFormState,
 } from "@/lib/actions/transactions";
 import { blurActiveElement } from "@/lib/utils/focus-utils";
-import type { CategoryRow } from "@/types/database";
+import {
+    formatWithDots,
+    parseAmountInput,
+} from "@/lib/utils/money";
 
 const initial: TxFormState = {};
 
@@ -45,14 +54,14 @@ function handleOpenChange(open: boolean, close: () => void): void {
 }
 
 interface InnerProps {
-    isOpen: boolean;
     onClose: () => void;
 }
 
-function AddTxInner({ isOpen, onClose }: InnerProps) {
-    const [categories, setCategories] = useState<CategoryRow[]>([]);
+function AddTxInner({ onClose }: InnerProps) {
+    const { categories } = useTxModal();
     const [type, setType] = useState<"income" | "expense">("expense");
-    const [amount, setAmount] = useState("");
+    const [amountRaw, setAmountRaw] = useState("");
+    const amountRef = useRef<HTMLInputElement>(null);
     const [description, setDescription] = useState("");
     const [categoryId, setCategoryId] = useState("");
     const [occurredOn, setOccurredOn] = useState(() =>
@@ -61,23 +70,43 @@ function AddTxInner({ isOpen, onClose }: InnerProps) {
     const [, startTransition] = useTransition();
     const [state, action, pending] = useActionState(createTransactionAction, initial);
 
-    useEffect(() => {
-        if (!isOpen) return;
-        const supabase = createClient();
-        (async () => {
-            const { data } = await supabase
-                .from("categories")
-                .select("*")
-                .order("bucket", { ascending: true })
-                .order("name", { ascending: true });
-            setCategories(data ?? []);
-        })();
-    }, [isOpen]);
+    const onAmountChange = (e: ChangeEvent<HTMLInputElement>) => {
+        const input = e.target;
+        const oldValue = input.value;
+        const oldCursor = input.selectionStart ?? oldValue.length;
+        const isPaste = (e.nativeEvent as InputEvent).inputType === "insertFromPaste";
+
+        let digitsBefore = 0;
+        for (let i = 0; i < oldCursor; i++) {
+            if (/\d/.test(oldValue[i])) digitsBefore++;
+        }
+
+        const rawDigits = oldValue.replace(/\D/g, "");
+        setAmountRaw(rawDigits);
+
+        requestAnimationFrame(() => {
+            if (!amountRef.current) return;
+            const displayed = formatWithDots(rawDigits);
+            if (isPaste) {
+                const pos = displayed.length;
+                amountRef.current.setSelectionRange(pos, pos);
+                return;
+            }
+            let dc = 0;
+            for (let i = 0; i <= displayed.length; i++) {
+                if (dc === digitsBefore) {
+                    amountRef.current.setSelectionRange(i, i);
+                    return;
+                }
+                if (i < displayed.length && /\d/.test(displayed[i])) dc++;
+            }
+        });
+    };
 
     useEffect(() => {
         if (state?.success) {
             startTransition(() => {
-                setAmount("");
+                setAmountRaw("");
                 setDescription("");
                 setCategoryId("");
                 setOccurredOn(new Date().toISOString().slice(0, 10));
@@ -119,15 +148,16 @@ function AddTxInner({ isOpen, onClose }: InnerProps) {
                 <Field.Root>
                     <Field.Label>Amount</Field.Label>
                     <Input
-                        name="amount"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="0.00"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
+                        ref={amountRef}
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        placeholder="0"
+                        value={formatWithDots(amountRaw)}
+                        onChange={onAmountChange}
                         required
                     />
+                    <input type="hidden" name="amount" value={parseAmountInput(amountRaw)} />
                 </Field.Root>
 
                 <Field.Root>
@@ -195,7 +225,12 @@ function AddTxInner({ isOpen, onClose }: InnerProps) {
     return form;
 }
 
-function AddTxMobile({ isOpen, onClose }: InnerProps) {
+interface WrapperProps {
+    isOpen: boolean;
+    onClose: () => void;
+}
+
+function AddTxMobile({ isOpen, onClose }: WrapperProps) {
     return (
         <Drawer.Root
             open={isOpen}
@@ -211,7 +246,7 @@ function AddTxMobile({ isOpen, onClose }: InnerProps) {
                             <Drawer.Title>Add transaction</Drawer.Title>
                         </Drawer.Header>
                         <Drawer.Body py={4}>
-                            <AddTxInner isOpen={isOpen} onClose={onClose} />
+                            <AddTxInner onClose={onClose} />
                         </Drawer.Body>
                     </Drawer.Content>
                 </Drawer.Positioner>
@@ -220,7 +255,7 @@ function AddTxMobile({ isOpen, onClose }: InnerProps) {
     );
 }
 
-function AddTxDesktop({ isOpen, onClose }: InnerProps) {
+function AddTxDesktop({ isOpen, onClose }: WrapperProps) {
     return (
         <Dialog.Root
             open={isOpen}
@@ -235,7 +270,7 @@ function AddTxDesktop({ isOpen, onClose }: InnerProps) {
                             <Dialog.Title>Add transaction</Dialog.Title>
                         </Dialog.Header>
                         <Dialog.Body py={4}>
-                            <AddTxInner isOpen={isOpen} onClose={onClose} />
+                            <AddTxInner onClose={onClose} />
                         </Dialog.Body>
                     </Dialog.Content>
                 </Dialog.Positioner>

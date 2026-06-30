@@ -135,8 +135,8 @@ export async function lockBudgetAction(
     updateTag(`monthly_budget:${user.id}:${parsed.data.year}:${parsed.data.month}`);
     updateTag("categories");
     updateTag("monthly_savings");
-    revalidatePath("/", "layout");
     revalidatePath("/budget");
     revalidatePath("/transactions");
+    revalidatePath("/", "page");
     return { success: true };
 }
