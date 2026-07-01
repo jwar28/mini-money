@@ -12,6 +12,7 @@ import { AllocationCards } from "@/components/dashboard/AllocationCards";
 import { TotalSavingsCard } from "@/components/dashboard/TotalSavingsCard";
 import { RecentTransactions } from "@/components/dashboard/RecentTransactions";
 import { computeAvailableBalance } from "@/lib/utils/budget";
+import { currentPeriod } from "@/lib/utils/dates";
 import { Box, Grid, GridItem, Heading, Skeleton, Stack, Text } from "@chakra-ui/react";
 
 // ponytail: recharts is ~100 kB gzipped and not visible on first paint —
@@ -57,9 +58,9 @@ function parseYm(ym?: string) {
 export default async function DashboardPage({ searchParams }: PageProps) {
     const sp = await searchParams;
     const parsed = parseYm(sp.ym);
-    const now = new Date();
-    const year = parsed?.year ?? now.getUTCFullYear();
-    const month = parsed?.month ?? now.getUTCMonth() + 1;
+    const fallback = currentPeriod();
+    const year = parsed?.year ?? fallback.year;
+    const month = parsed?.month ?? fallback.month;
     const prev = prevPeriod(year, month);
 
     const [currBudget, prevBudget, totals, prevTotals, recent, trend, categories, totalSavings] = await Promise.all([

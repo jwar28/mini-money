@@ -10,6 +10,7 @@ import { TotalExpensesCard } from "@/components/transactions/TotalExpensesCard";
 import { TransactionList } from "@/components/transactions/TransactionList";
 import { formatMoney } from "@/lib/utils/money";
 import { computeAvailableBalance } from "@/lib/utils/budget";
+import { currentPeriod } from "@/lib/utils/dates";
 
 interface PageProps {
     searchParams: Promise<{ ym?: string }>;
@@ -30,11 +31,9 @@ function prevPeriod(year: number, month: number) {
 export default async function TransactionsPage({ searchParams }: PageProps) {
     const sp = await searchParams;
     const parsed = parseYm(sp.ym);
-    // Use UTC for the fallback month so server-rendered HTML matches what the
-    // client will produce during hydration regardless of the user's timezone.
-    const now = new Date();
-    const year = parsed?.year ?? now.getUTCFullYear();
-    const month = parsed?.month ?? now.getUTCMonth() + 1;
+    const fallback = currentPeriod();
+    const year = parsed?.year ?? fallback.year;
+    const month = parsed?.month ?? fallback.month;
     const prev = prevPeriod(year, month);
 
     const [transactions, prevTotals, budget, prevBudget, categories] = await Promise.all([
@@ -60,6 +59,12 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
 
     const lockedTotal = (budget?.budget_allocations ?? [])
         .filter((a) => a.is_visual_locked)
+        .reduce((s, a) => s + (salary * Number(a.percentage)) / 100, 0);
+
+    // ponytail: denominator for the "% of monthly budget utilized / remaining"
+    // card — counts every defined category, locked or not, so unlocked
+    // categories still shape the visible budget headroom.
+    const totalAllocated = (budget?.budget_allocations ?? [])
         .reduce((s, a) => s + (salary * Number(a.percentage)) / 100, 0);
 
     const lockedPrev = (prevBudget?.budget_allocations ?? [])
@@ -90,7 +95,7 @@ export default async function TransactionsPage({ searchParams }: PageProps) {
                     <Stack gap={6}>
                         <TotalExpensesCard
                             expense={currentExpense}
-                            budget={lockedTotal}
+                            budget={totalAllocated - lockedTotal}
                             deltaPct={deltaPct}
                         />
                         <TransactionList transactions={transactions} categories={categories} />

@@ -27,6 +27,7 @@ import {
     type TxFormState,
 } from "@/lib/actions/transactions";
 import { blurActiveElement } from "@/lib/utils/focus-utils";
+import { todayLocalIso } from "@/lib/utils/dates";
 import {
     formatWithDots,
     parseAmountInput,
@@ -64,9 +65,7 @@ function AddTxInner({ onClose }: InnerProps) {
     const amountRef = useRef<HTMLInputElement>(null);
     const [description, setDescription] = useState("");
     const [categoryId, setCategoryId] = useState("");
-    const [occurredOn, setOccurredOn] = useState(() =>
-        new Date().toISOString().slice(0, 10),
-    );
+    const [occurredOn, setOccurredOn] = useState(() => todayLocalIso());
     const [, startTransition] = useTransition();
     const [state, action, pending] = useActionState(createTransactionAction, initial);
 
@@ -109,7 +108,7 @@ function AddTxInner({ onClose }: InnerProps) {
                 setAmountRaw("");
                 setDescription("");
                 setCategoryId("");
-                setOccurredOn(new Date().toISOString().slice(0, 10));
+                setOccurredOn(todayLocalIso());
                 onClose();
             });
         }

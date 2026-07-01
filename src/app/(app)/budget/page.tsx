@@ -2,6 +2,7 @@ import { Box, Flex, Stack, Text } from "@chakra-ui/react";
 import { getCategories, getCurrentUserId, getMonthlyBudget } from "@/lib/queries";
 import { MonthSelector } from "@/components/budget/MonthSelector";
 import { BudgetComposer } from "@/components/budget/BudgetComposer";
+import { currentPeriod } from "@/lib/utils/dates";
 
 interface PageProps {
     searchParams: Promise<{ ym?: string }>;
@@ -17,12 +18,9 @@ function parseYm(ym?: string) {
 export default async function BudgetPage({ searchParams }: PageProps) {
     const sp = await searchParams;
     const parsed = parseYm(sp.ym);
-    // Fallback uses UTC so server and client render the same value, avoiding
-    // hydration mismatches when the user's local timezone straddles a month
-    // boundary differently from the server.
-    const now = new Date();
-    const year = parsed?.year ?? now.getUTCFullYear();
-    const month = parsed?.month ?? now.getUTCMonth() + 1;
+    const fallback = currentPeriod();
+    const year = parsed?.year ?? fallback.year;
+    const month = parsed?.month ?? fallback.month;
 
     const [budget, categories, userId] = await Promise.all([
         getMonthlyBudget(year, month),

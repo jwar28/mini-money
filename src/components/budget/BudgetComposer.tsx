@@ -488,7 +488,7 @@ const AllocationRow = memo(function AllocationRow({
                 <Flex align="center" gap={3}>
                     <Stack align="end" gap={0}>
                         <Text fontWeight="800" fontSize="lg">
-                            {formatMoney(amount)}
+                            {formatMoney(amount, { decimals: 0 })}
                         </Text>
                         <Text fontSize="xs" color="text.secondary">
                             {percentage.toFixed(0)}%

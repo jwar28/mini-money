@@ -7,9 +7,21 @@ import {
     parseISO,
 } from "date-fns";
 
+// ponytail: use local time so users west of UTC see the period that matches
+// their wall clock, not the server's UTC clock (which can be a day/month
+// ahead during the local evening of the last day of a period). The narrow
+// UTC-vs-local mismatch window is silenced with suppressHydrationWarning
+// on consumers.
 export function currentPeriod(): { year: number; month: number } {
     const now = new Date();
-    return { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 };
+    return { year: now.getFullYear(), month: now.getMonth() + 1 };
+}
+
+// ponytail: yyyy-MM-dd in the user's local timezone, not UTC. Replaces
+// `new Date().toISOString().slice(0, 10)` which is UTC and drifts by a day
+// for users west of UTC during their local evening.
+export function todayLocalIso(): string {
+    return format(new Date(), "yyyy-MM-dd");
 }
 
 export function periodKey(year: number, month: number): string {

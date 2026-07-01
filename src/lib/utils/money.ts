@@ -19,10 +19,10 @@ function getFormatter(locale: string, currency: string, maxFrac: number): Intl.N
 
 export function formatMoney(
     value: number,
-    options: { currency?: string; locale?: string } = {},
+    options: { currency?: string; locale?: string; decimals?: number } = {},
 ): string {
-    const { currency = DEFAULT_CURRENCY, locale = DEFAULT_LOCALE } = options;
-    return getFormatter(locale, currency, 2).format(value);
+    const { currency = DEFAULT_CURRENCY, locale = DEFAULT_LOCALE, decimals = 2 } = options;
+    return getFormatter(locale, currency, decimals).format(value);
 }
 
 const compactFormatters = new Map<string, Intl.NumberFormat>();

@@ -10,7 +10,7 @@ interface TotalExpensesCardProps {
 
 export function TotalExpensesCard({ expense, budget, deltaPct }: TotalExpensesCardProps) {
     const pct = budget > 0 ? Math.min(100, (expense / budget) * 100) : 0;
-    const remaining = Math.max(0, budget - expense);
+    const total = Math.max(0, budget);
 
     return (
         <Card.Root
@@ -54,7 +54,7 @@ export function TotalExpensesCard({ expense, budget, deltaPct }: TotalExpensesCa
                     </Box>
                     <Flex justify="space-between" fontSize="xs" color="text.secondary">
                         <Text>{pct.toFixed(0)}% of monthly budget utilized</Text>
-                        <Text>{formatMoney(remaining)} remaining</Text>
+                        <Text>{formatMoney(total)} total</Text>
                     </Flex>
                 </Stack>
             </Card.Body>

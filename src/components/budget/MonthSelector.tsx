@@ -47,7 +47,12 @@ export function MonthSelector({ year, month }: MonthSelectorProps) {
                 <FiChevronLeft />
             </Button>
             <Stack align="center" flex="1" gap={0}>
-                <Heading size="md" fontWeight="800" textAlign="center">
+                <Heading
+                    size="md"
+                    fontWeight="800"
+                    textAlign="center"
+                    suppressHydrationWarning
+                >
                     {monthLabel(year, month)}
                 </Heading>
             </Stack>
